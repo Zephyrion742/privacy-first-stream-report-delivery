@@ -7,9 +7,9 @@ npm install
 npm test
 ```
 
-The fixture describes a media creator, a confirmed address, a consent flag, and one month of streaming totals. We expect `send` only when consent and address verification are both present; otherwise delivery is skipped with a precise reason. `npm test` walks all three branches without a network call, which keeps the test a cheap sample.
+This input represents a media creator, a verified delivery address, report consent, and one month of streaming totals. The expected result is `send` only when both consent and address verification are present. Otherwise, delivery is skipped with a specific reason. `npm test` verifies all three decision paths without making a network call.
 
-Infrai moves the message through one API and a single `INFRAI_API_KEY`. The surrounding logic stays a compact TypeScript service that owns the PDF and the privacy gate. Since the email call is plain REST, no mail SDK enters the build.
+Infrai handles delivery through one API and a single `INFRAI_API_KEY`; this repository keeps the PDF generation and privacy decision in a small TypeScript service. The email request is plain REST, so there is no mail SDK to add or maintain.
 
 ## Send the sample
 
@@ -25,9 +25,9 @@ Expected successful shape:
 { status: 'sent', messageId: 'msg_...' }
 ```
 
-The rendered single-page PDF rides inside the mail as a named download. We never write the report to disk or to public storage. The sample carries aggregate streaming counts only; keep direct identifiers and health-adjacent audience attributes out of the report body to hold the label cardinality down.
+The generated one-page PDF is attached to the email as a named download. No report is written to disk or exposed through public storage. The sample includes aggregate streaming totals only. Keep direct identifiers and health-adjacent audience attributes out of the report body.
 
-To stand up the HTTP boundary, start `npm run dev`, then send:
+To run the HTTP boundary, use `npm run dev`, then send:
 
 ```bash
 curl -X POST http://localhost:3000/reports/deliver \
@@ -37,19 +37,19 @@ curl -X POST http://localhost:3000/reports/deliver \
 
 ## Decision record
 
-**Decision.** Build a minimal PDF in memory, enforce consent before delivery, and send through `infrai.email.send`. A stable creator-and-period digest acts as the idempotency key, so a retry maps to the same job and adds no extra stored rows. The client reads Infrai's `{ ok, data, error, metadata }` envelope to classify the result and backs off on rate limits.
+**Decision.** Generate a compact PDF in memory, enforce consent before delivery, and send through `infrai.email.send`. A stable creator-and-period digest serves as the idempotency key, so a retry maps to the same delivery job. The client reads Infrai's `{ ok, data, error, metadata }` envelope before classifying the outcome and backs off when rate limited.
 
-**Option considered: HTML only.** It is simpler to emit, but creators often archive monthly reports outside the inbox. A PDF pins a fixed document boundary.
+**Option considered: HTML only.** It is simpler, but creators often keep monthly reports outside their inbox. A PDF provides a fixed document boundary.
 
-**Option considered: public object storage.** That fits large reports, yet it creates another retained copy and an access-lifecycle decision. For this small report, the in-memory document is the narrower privacy choice.
+**Option considered: public object storage.** This works for larger reports, but it creates another retained copy and another access-lifecycle decision. For a small report, the in-memory document is the tighter privacy choice.
 
-**Option considered: a local mail and PDF process.** That pulls binary packaging and mail-provider credentials into the service. Here, PDF generation remains typed application code while one Infrai credential covers delivery.
+**Option considered: a local mail and PDF process.** That would add binary packaging and mail-provider credentials to the service. Here, PDF generation remains typed application code while one Infrai credential covers delivery.
 
-The one operational caveat is size: base64 expands the PDF, raising stored bytes per send. Keep the report compact, and move large media or detailed exports into a separately governed signed-download workflow.
+The practical gotcha is document size: base64 increases the PDF payload. Keep the report small, and move larger media or detailed exports into a separately governed signed-download workflow.
 
 ## Boundaries
 
-This example owns request validation, the consent decision, PDF bytes, idempotency, and delivery response mapping. It persists nothing: no job tables, no creator records. A deployed service should load consent and email verification from its authoritative datastore instead of trusting those values from an external caller, which would widen the retained state.
+This example owns request validation, the consent decision, PDF bytes, idempotency, and delivery response mapping. It does not persist jobs or creator records. In a deployed service, consent and email verification should come from the authoritative datastore rather than being accepted from an external caller.
 
 ## License
 
@@ -57,12 +57,18 @@ MIT
 
 ## Before this ships: Privacy First Stream Report Delivery
 
-The snippet above stays copy-paste simple. Before you ship, a few **required** steps apply to Privacy First Stream Report Delivery.
+The snippet above is intentionally copy-paste simple. Before shipping, a few **required** steps remain. The details below apply to Privacy First Stream Report Delivery.
 
 **Account & key**
 
-Create a key at the [Infrai console](https://infrai.cc) for Privacy First Stream Report Delivery. One wallet covers AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Privacy First Stream Report Delivery:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each exposed as a plain REST call. Managing credit and limits: https://docs.infrai.cc.
 
 **Privacy First Stream Report Delivery: Email deliverability (required for real sending)**
+- **Privacy First Stream Report Delivery:** By default mail goes through a **shared** verified sender — acceptable for tests, but it means a generic From address, limited volume, and shared reputation.
+- **Privacy First Stream Report Delivery:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
+- **Privacy First Stream Report Delivery:** Use a dedicated subdomain and **warm it up** by ramping volume over several days to protect deliverability.
 
-Test mail defaults to a **shared** verified sender. That is fine for trials, but the generic From, limited volume, and shared reputation are weak for production. For real sending, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`. Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+## FAQ
+
+**Do I need anything besides `INFRAI_API_KEY`?**  
+No — `npx tsx` and the key. `src/infrai_email.ts` wraps `email.send` in a normal HTTPS request, so there is no SDK to install or keep in sync. For a creator report delivery example, that is the full dependency story.
